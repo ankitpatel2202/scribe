@@ -48,20 +48,36 @@ defmodule SocialScribe.CalendarSyncronizer do
 
   defp ensure_valid_token(%UserCredential{} = credential) do
     if DateTime.compare(credential.expires_at || DateTime.utc_now(), DateTime.utc_now()) == :lt do
-      case TokenRefresherApi.refresh_token(credential.refresh_token) do
-        {:ok, new_token_data} ->
-          {:ok, updated_credential} =
-            Accounts.update_credential_tokens(credential, new_token_data)
+      if blank?(credential.refresh_token) do
+        {:error,
+         {:refresh_failed,
+          {400,
+           %{
+             "error" => "invalid_request",
+             "error_description" =>
+               "No refresh token. User must re-authenticate with calendar offline access."
+           }}}}
+      else
+        case TokenRefresherApi.refresh_token(credential.refresh_token) do
+          {:ok, new_token_data} ->
+            {:ok, updated_credential} =
+              Accounts.update_credential_tokens(credential, new_token_data)
 
-          {:ok, updated_credential.token}
+            {:ok, updated_credential.token}
 
-        {:error, reason} ->
-          {:error, {:refresh_failed, reason}}
+          {:error, reason} ->
+            {:error, {:refresh_failed, reason}}
+        end
       end
     else
       {:ok, credential.token}
     end
   end
+
+  defp blank?(nil), do: true
+  defp blank?(""), do: true
+  defp blank?(s) when is_binary(s), do: String.trim(s) == ""
+  defp blank?(_), do: false
 
   defp sync_items(items, user_id, credential_id) do
     Enum.each(items, fn item ->

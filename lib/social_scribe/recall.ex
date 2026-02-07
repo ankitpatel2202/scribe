@@ -18,9 +18,10 @@ defmodule SocialScribe.Recall do
     ])
   end
 
-  @impl SocialScribe.RecallApi
-  def create_bot(meeting_url, join_at) do
-    body = %{
+  # Build create-bot body per https://docs.recall.ai/docs/bot-real-time-transcription
+  # Use recording_config (transcript + realtime_endpoints), not the deprecated transcription_options.
+  defp build_create_bot_body(meeting_url, join_at) do
+    base = %{
       meeting_url: meeting_url,
       bot_name: "Social Scribe Bot",
       join_at: Timex.format!(join_at, "{ISO:Extended}"),
@@ -33,6 +34,29 @@ defmodule SocialScribe.Recall do
       }
     }
 
+    case Application.get_env(:social_scribe, :recall_transcript_webhook_url) do
+      nil ->
+        base
+
+      url when is_binary(url) and url != "" ->
+        Map.put(base, :recording_config, %{
+          transcript: %{
+            provider: %{recallai_streaming: %{}}
+          },
+          realtime_endpoints: [
+            %{
+              type: "webhook",
+              url: url,
+              events: ["transcript.data", "transcript.partial_data"]
+            }
+          ]
+        })
+    end
+  end
+
+  @impl SocialScribe.RecallApi
+  def create_bot(meeting_url, join_at) do
+    body = build_create_bot_body(meeting_url, join_at)
     Tesla.post(client(), "/bot", body)
   end
 

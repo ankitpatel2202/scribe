@@ -4,6 +4,7 @@ defmodule SocialScribe.Bots do
   """
 
   import Ecto.Query, warn: false
+  require Logger
   alias SocialScribe.Repo
 
   alias SocialScribe.Bots.RecallBot
@@ -115,6 +116,26 @@ defmodule SocialScribe.Bots do
 
   # --- Orchestration Functions ---
 
+  defp bot_status_from_response(api_response) when is_map(api_response) do
+    changes = Map.get(api_response, :status_changes) || Map.get(api_response, "status_changes") || []
+    first = List.first(changes)
+    if is_map(first), do: Map.get(first, :code) || Map.get(first, "code") || "unknown", else: "unknown"
+  end
+
+  defp bot_status_from_response(_), do: "unknown"
+
+  # Unwraps RecallApi.create_bot result to a value we can case on: body map or nil.
+  # Handles both %Tesla.Env{} and mock-style %{body: body}.
+  defp unwrap_recall_create_response(result) do
+    case result do
+      {:ok, %Tesla.Env{status: status, body: body}} when status in 200..299 -> body
+      {:ok, %Tesla.Env{body: body}} when is_map(body) -> body
+      {:ok, %{body: body}} when is_map(body) -> body
+      {:ok, _} -> nil
+      {:error, _} -> nil
+    end
+  end
+
   @doc """
   Orchestrates creating a bot via the API and saving it to the database.
   """
@@ -184,7 +205,7 @@ defmodule SocialScribe.Bots do
              DateTime.add(calendar_event.start_time, -join_minute_offset, :minute)
            ) do
       update_recall_bot(bot, %{
-        status: api_response.status_changes |> List.first() |> Map.get(:code)
+        status: bot_status_from_response(api_response)
       })
     end
   end

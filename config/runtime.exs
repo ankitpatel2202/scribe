@@ -21,7 +21,9 @@ import Config
 config :ueberauth, Ueberauth.Strategy.Google.OAuth,
   client_id: System.get_env("GOOGLE_CLIENT_ID"),
   client_secret: System.get_env("GOOGLE_CLIENT_SECRET"),
-  redirect_uri: System.get_env("GOOGLE_REDIRECT_URI")
+  redirect_uri: System.get_env("GOOGLE_REDIRECT_URI"),
+  access_type: "offline",
+  prompt: "consent"
 
 config :ueberauth, Ueberauth.Strategy.LinkedIn.OAuth,
   client_id: System.get_env("LINKEDIN_CLIENT_ID"),
@@ -35,6 +37,8 @@ config :ueberauth, Ueberauth.Strategy.Facebook.OAuth,
 
 config :social_scribe, :recall_api_key, System.get_env("RECALL_API_KEY")
 config :social_scribe, :recall_region, System.get_env("RECALL_REGION")
+# Optional: enable real-time transcription per https://docs.recall.ai/docs/bot-real-time-transcription
+config :social_scribe, :recall_transcript_webhook_url, System.get_env("RECALL_TRANSCRIPT_WEBHOOK_URL")
 config :social_scribe, :gemini_api_key, System.get_env("GEMINI_API_KEY")
 
 config :ueberauth, Ueberauth.Strategy.Hubspot.OAuth,
