@@ -37,13 +37,18 @@ defmodule SocialScribe.SalesforceApi do
          encoded <- URI.encode_www_form(soql),
          url <- "#{base}/services/data/#{@api_version}/query?q=#{encoded}" do
       case get_with_token(url, token) do
-        {:ok, %{"records" => records}} ->
-          {:ok, Enum.map(records, &map_contact_summary/1)}
+        {:ok, %{"records" => records} = full} ->
+          Logger.debug("SalesforceApi.search_contacts response: totalSize=#{Map.get(full, "totalSize", "?")}, records=#{length(records)}")
+          result = Enum.map(records, &map_contact_summary/1)
+          Logger.debug("SalesforceApi.search_contacts mapped result: #{inspect(result)}")
+          {:ok, result}
 
-        {:ok, %{"error" => code, "message" => msg}} ->
+        {:ok, %{"error" => code, "message" => msg} = body} ->
+          Logger.debug("SalesforceApi.search_contacts error response: #{inspect(body)}")
           {:error, {:salesforce, code, msg}}
 
-        {:error, _} = err ->
+        {:error, reason} = err ->
+          Logger.debug("SalesforceApi.search_contacts request failed: #{inspect(reason)}")
           err
       end
     end
@@ -58,12 +63,15 @@ defmodule SocialScribe.SalesforceApi do
          url <- "#{base}/services/data/#{@api_version}/sobjects/Contact/#{contact_id}" do
       case get_with_token(url, token) do
         {:ok, body} when is_map(body) and not is_map_key(body, "error") ->
+          Logger.debug("SalesforceApi.get_contact response for #{contact_id}: #{inspect(body)}")
           {:ok, body}
 
-        {:ok, %{"errorCode" => code, "message" => msg}} ->
+        {:ok, %{"errorCode" => code, "message" => msg} = body} ->
+          Logger.debug("SalesforceApi.get_contact error response: #{inspect(body)}")
           {:error, {:salesforce, code, msg}}
 
-        {:error, _} = err ->
+        {:error, reason} = err ->
+          Logger.debug("SalesforceApi.get_contact request failed for #{contact_id}: #{inspect(reason)}")
           err
       end
     end
@@ -78,8 +86,13 @@ defmodule SocialScribe.SalesforceApi do
          base <- base_url(conn),
          url <- "#{base}/services/data/#{@api_version}/sobjects/Contact/#{contact_id}" do
     case patch_with_token(url, token, attrs) do
-      {:ok, 204} -> :ok
-      {:error, _} = err -> err
+      {:ok, 204} ->
+        Logger.debug("SalesforceApi.update_contact success: contact_id=#{contact_id}, attrs=#{inspect(attrs)}")
+        :ok
+
+      {:error, reason} = err ->
+        Logger.debug("SalesforceApi.update_contact failed: contact_id=#{contact_id}, reason=#{inspect(reason)}")
+        err
     end
     end
   end
@@ -180,9 +193,16 @@ defmodule SocialScribe.SalesforceApi do
       ])
 
     case Tesla.get(client, url) do
-      {:ok, %Tesla.Env{status: 200, body: body}} -> {:ok, body}
-      {:ok, %Tesla.Env{status: status, body: body}} -> {:error, {status, body}}
-      {:error, reason} -> {:error, reason}
+      {:ok, %Tesla.Env{status: 200, body: body}} ->
+        {:ok, body}
+
+      {:ok, %Tesla.Env{status: status, body: body}} ->
+        Logger.debug("SalesforceApi GET non-200: status=#{status}, body=#{inspect(body)}")
+        {:error, {status, body}}
+
+      {:error, reason} ->
+        Logger.debug("SalesforceApi GET request error: #{inspect(reason)}")
+        {:error, reason}
     end
   end
 
@@ -194,9 +214,16 @@ defmodule SocialScribe.SalesforceApi do
       ])
 
     case Tesla.patch(client, url, attrs) do
-      {:ok, %Tesla.Env{status: 204}} -> {:ok, 204}
-      {:ok, %Tesla.Env{status: status, body: body}} -> {:error, {status, body}}
-      {:error, reason} -> {:error, reason}
+      {:ok, %Tesla.Env{status: 204}} ->
+        {:ok, 204}
+
+      {:ok, %Tesla.Env{status: status, body: body}} ->
+        Logger.debug("SalesforceApi PATCH non-204: status=#{status}, body=#{inspect(body)}")
+        {:error, {status, body}}
+
+      {:error, reason} ->
+        Logger.debug("SalesforceApi PATCH request error: #{inspect(reason)}")
+        {:error, reason}
     end
   end
 end

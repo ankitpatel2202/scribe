@@ -29,16 +29,16 @@
   <div class="flex flex-col gap-8">
     <div class="bg-white shadow-xl rounded-lg p-6 md:p-8">
       <h2 class="text-2xl font-semibold mb-4 text-slate-700">
-        Update CRM Contact
+        Update in Salesforce
       </h2>
       <p class="text-slate-600 mb-4">
-        Review suggested updates to a Salesforce contact based on this meeting and apply them.
+        Review suggested updates to a Salesforce contact based on this meeting and sync them to your CRM.
       </p>
       <.link
         patch={~p"/dashboard/meetings/#{@meeting}/crm_contact"}
         class="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200"
       >
-        Open CRM update modal
+        Review & update Salesforce contact
       </.link>
     </div>
 
@@ -192,9 +192,14 @@
   on_cancel={JS.patch(~p"/dashboard/meetings/#{@meeting}")}
 >
   <div class="space-y-6">
-    <h2 class="text-2xl font-semibold text-slate-700">
-      Update Salesforce contact
-    </h2>
+    <div>
+      <h2 class="text-xl font-semibold text-slate-800">
+        Update in Salesforce
+      </h2>
+      <p class="mt-1 text-sm text-slate-600">
+        Here are suggested updates to sync with your integrations based on this meeting.
+      </p>
+    </div>
 
     <%= if is_nil(@salesforce_connection) do %>
       <p class="text-slate-600">
@@ -204,93 +209,149 @@
         </.link>
         to use this feature.
       </p>
-      <button
-        type="button"
-        phx-click={JS.patch(~p"/dashboard/meetings/#{@meeting}")}
-        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200"
-      >
-        Close
-      </button>
+      <div class="flex justify-end">
+        <button
+          type="button"
+          phx-click={JS.patch(~p"/dashboard/meetings/#{@meeting}")}
+          class="inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50"
+        >
+          Close
+        </button>
+      </div>
     <% else %>
-      <%= if is_nil(@selected_contact) do %>
-        <div>
-          <label for="crm-contact-search" class="block text-sm font-medium text-slate-700 mb-1">
-            Search for a contact
-          </label>
-          <form phx-submit="search_contacts" phx-change="search_contacts" class="flex gap-2 mb-4">
+      <%= if @update_success do %>
+        <div class="py-4 px-4 rounded-lg bg-emerald-50 border border-emerald-200">
+          <p class="text-emerald-800 font-semibold flex items-center gap-2">
+            <.icon name="hero-check" class="h-5 w-5 text-emerald-600" />
+            Success
+          </p>
+          <p class="mt-2 text-sm text-emerald-700">{@update_success}</p>
+          <div class="mt-4 flex justify-end">
+            <button
+              type="button"
+              phx-click={JS.patch(~p"/dashboard/meetings/#{@meeting}")}
+              class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      <% else %>
+      <% # Select Contact: search when none selected, or show selected with avatar + Change %>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-2">
+          Select Contact
+        </label>
+        <p class="text-sm text-slate-500 mb-3">
+          Search for a Salesforce contact below, then click one to see AI-suggested updates from this meeting.
+        </p>
+        <%= if is_nil(@selected_contact) do %>
+          <form phx-submit="search_contacts" phx-change="search_contacts" class="flex gap-2">
             <input
               type="text"
               name="query"
               id="crm-contact-search"
               value={@contact_search_query}
-              placeholder="Name or email..."
+              placeholder="Search by name or email..."
               phx-debounce="300"
-              class="block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              class="block w-full rounded-lg border border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
             />
             <button type="submit" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
               Search
             </button>
           </form>
-          <ul class="border border-slate-200 rounded-md divide-y divide-slate-200 max-h-64 overflow-y-auto">
+          <ul class="mt-2 border border-slate-200 rounded-lg divide-y divide-slate-200 max-h-56 overflow-y-auto">
             <%= if Enum.empty?(@contact_results) && @contact_search_query != "" do %>
               <li class="px-4 py-3 text-slate-500 text-sm">No contacts found.</li>
             <% end %>
             <li
               :for={contact <- @contact_results}
-              class="px-4 py-3 hover:bg-slate-50 cursor-pointer flex justify-between items-center"
-              phx-click="select_contact"
-              phx-value-contact_id={contact["id"]}
+              class="px-4 py-3 hover:bg-slate-50 cursor-pointer flex items-center gap-3"
             >
-              <span class="font-medium text-slate-700">{contact["name"] || "Unnamed"}</span>
-              <span :if={contact["email"]} class="text-sm text-slate-500">{contact["email"]}</span>
+              <button
+                type="button"
+                class="flex w-full items-center gap-3 text-left focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-inset rounded"
+                phx-click="select_contact"
+                phx-value-contact_id={contact["id"]}
+              >
+                <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-medium text-indigo-700">
+                  {contact_initials(contact)}
+                </span>
+                <div class="min-w-0 flex-1">
+                  <span class="font-medium text-slate-700">{contact["name"] || "Unnamed"}</span>
+                  <span :if={contact["email"]} class="ml-2 text-sm text-slate-500">{contact["email"]}</span>
+                </div>
+              </button>
             </li>
           </ul>
-        </div>
-      <% else %>
-        <p class="text-slate-600">
-          Contact: <strong>{@selected_contact["name"] || "Unnamed"}</strong>
-        </p>
-        <%= if @loading_suggestions do %>
-          <p class="text-slate-500">Generating suggestions from meeting...</p>
         <% else %>
+          <div class="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-medium text-indigo-700">
+              {contact_initials(@selected_contact)}
+            </span>
+            <span class="font-medium text-slate-700">{@selected_contact["name"] || "Unnamed"}</span>
+            <button
+              type="button"
+              phx-click="change_contact"
+              class="ml-auto text-sm font-medium text-indigo-600 hover:text-indigo-800"
+            >
+              Change
+            </button>
+          </div>
+        <% end %>
+      </div>
+
+      <%= if @selected_contact do %>
+        <%= if @loading_suggestions do %>
+          <p class="py-4 text-slate-500">Generating suggestions from meeting...</p>
+        <% else %>
+          <%= if @suggestions_error do %>
+            <div class="py-4 px-4 rounded-lg bg-amber-50 border border-amber-200">
+              <p class="text-amber-800 font-medium">Couldn't generate suggestions</p>
+              <p class="mt-1 text-sm text-amber-700">{@suggestions_error}</p>
+              <p class="mt-2 text-sm text-amber-600">Click "Change" to pick another contact, or try again in a minute.</p>
+            </div>
+          <% else %>
           <%= if Enum.empty?(@suggestions) do %>
-            <p class="text-slate-500">No suggested updates from this meeting.</p>
+            <p class="py-4 text-slate-500">No suggested updates from this meeting.</p>
           <% else %>
             <.simple_form
               for={%{}}
               id="apply-suggestions-form"
               phx-submit="apply_suggestions"
             >
-              <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-slate-200">
-                  <thead class="bg-slate-50">
-                    <tr>
-                      <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Apply</th>
-                      <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Field</th>
-                      <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Current (Salesforce)</th>
-                      <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Suggested</th>
-                      <th class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">Reason</th>
-                    </tr>
-                  </thead>
-                  <tbody class="bg-white divide-y divide-slate-200">
-                    <tr :for={suggestion <- @suggestions} class="hover:bg-slate-50">
-                      <td class="px-4 py-2">
-                        <input
-                          type="checkbox"
-                          name="fields[]"
-                          value={suggestion["field"]}
-                          class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                        />
-                      </td>
-                      <td class="px-4 py-2 text-sm font-medium text-slate-700">{suggestion["field"]}</td>
-                      <td class="px-4 py-2 text-sm text-slate-600">{format_contact_value(suggestion["current_value"])}</td>
-                      <td class="px-4 py-2 text-sm text-indigo-600">{format_contact_value(suggestion["suggested_value"])}</td>
-                      <td class="px-4 py-2 text-sm text-slate-500">{suggestion["reason"] || "—"}</td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div class="rounded-lg border border-slate-200 bg-white">
+                <div class="border-b border-slate-200 px-4 py-3">
+                  <span class="text-sm font-medium text-slate-700">Suggested updates</span>
+                  <span class="ml-2 text-sm text-slate-500">{length(@suggestions)} field(s)</span>
+                </div>
+                <div class="divide-y divide-slate-200">
+                  <div
+                    :for={suggestion <- @suggestions}
+                    class="flex flex-wrap items-center gap-x-2 gap-y-2 px-4 py-3 hover:bg-slate-50/50"
+                  >
+                    <input
+                      type="checkbox"
+                      name="fields[]"
+                      value={suggestion["field"]}
+                      class="suggestion-checkbox rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span class="text-sm font-medium text-slate-700 w-32 shrink-0">
+                      {salesforce_field_label(suggestion["field"])}
+                    </span>
+                    <span class="text-sm text-slate-500 shrink-0">{format_contact_value(suggestion["current_value"])}</span>
+                    <span class="text-slate-400 shrink-0" aria-hidden="true">→</span>
+                    <span class="text-sm font-medium text-indigo-600 shrink-0">{format_contact_value(suggestion["suggested_value"])}</span>
+                    <div :if={suggestion["reason"]} class="w-full pl-6 text-xs text-slate-500 mt-0.5">
+                      {suggestion["reason"]}
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="mt-4 flex justify-end gap-2">
+              <p class="mt-3 text-sm text-slate-600">
+                Select the fields you want to update, then click Update Salesforce.
+              </p>
+              <div class="mt-6 flex justify-end gap-2">
                 <button
                   type="button"
                   phx-click={JS.patch(~p"/dashboard/meetings/#{@meeting}")}
@@ -298,11 +359,18 @@
                 >
                   Cancel
                 </button>
-                <.button type="submit">Apply selected to Salesforce</.button>
+                <button
+                  type="submit"
+                  class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700"
+                >
+                  Update Salesforce
+                </button>
               </div>
             </.simple_form>
           <% end %>
+          <% end %>
         <% end %>
+      <% end %>
       <% end %>
     <% end %>
   </div>

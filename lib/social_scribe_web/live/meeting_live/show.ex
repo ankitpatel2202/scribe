@@ -55,6 +55,8 @@ defmodule SocialScribeWeb.MeetingLive.Show do
         |> assign(:contact_record, nil)
         |> assign(:suggestions, [])
         |> assign(:loading_suggestions, false)
+        |> assign(:suggestions_error, nil)
+        |> assign(:update_success, nil)
         |> assign(:crm_contact_search_form, to_form(%{"query" => ""}))
 
       {:ok, socket}
@@ -73,6 +75,8 @@ defmodule SocialScribeWeb.MeetingLive.Show do
       |> assign(:contact_record, nil)
       |> assign(:suggestions, [])
       |> assign(:loading_suggestions, false)
+      |> assign(:suggestions_error, nil)
+      |> assign(:update_success, nil)
 
     {:noreply, socket}
   end
@@ -120,8 +124,29 @@ defmodule SocialScribeWeb.MeetingLive.Show do
 
   @impl true
   def handle_event("select_contact", %{"contact_id" => contact_id}, socket) do
-    socket = assign(socket, :loading_suggestions, true)
+    summary =
+      Enum.find(socket.assigns.contact_results, fn c -> c["id"] == contact_id end)
+
+    socket =
+      socket
+      |> assign(:selected_contact, summary)
+      |> assign(:loading_suggestions, true)
+
     send(self(), {:load_contact_and_suggest, contact_id})
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("change_contact", _params, socket) do
+    socket =
+      socket
+      |> assign(:selected_contact, nil)
+      |> assign(:contact_record, nil)
+      |> assign(:suggestions, [])
+      |> assign(:loading_suggestions, false)
+      |> assign(:suggestions_error, nil)
+
     {:noreply, socket}
   end
 
@@ -207,8 +232,7 @@ defmodule SocialScribeWeb.MeetingLive.Show do
       with {:ok, record} <- SalesforceApi.get_contact(conn, contact_id),
            {:ok, suggestions} <-
              AIContentGeneratorApi.generate_salesforce_contact_updates(meeting, record) do
-        summary =
-          Enum.find(socket.assigns.contact_results, fn c -> c["id"] == contact_id end)
+        summary = contact_summary_from_record(record)
 
         {:ok,
          %{
@@ -228,14 +252,55 @@ defmodule SocialScribeWeb.MeetingLive.Show do
           |> assign(:selected_contact, summary)
           |> assign(:suggestions, suggestions)
           |> assign(:loading_suggestions, false)
+          |> assign(:suggestions_error, nil)
 
-        {:error, _reason} ->
+        {:error, reason} ->
+          error_message = suggestions_error_message(reason)
           socket
-          |> put_flash(:error, "Could not load contact or generate suggestions.")
+          |> put_flash(:error, error_message)
           |> assign(:loading_suggestions, false)
+          |> assign(:suggestions_error, error_message)
       end
 
     {:noreply, socket}
+  end
+
+  defp suggestions_error_message({:api_error, 429, _body}) do
+    "AI is temporarily rate limited. Please wait a minute and try again (select the contact again)."
+  end
+
+  defp suggestions_error_message({:api_error, status, _body}) when is_integer(status) do
+    "AI service error (#{status}). Please try again later."
+  end
+
+  defp suggestions_error_message(:no_transcript) do
+    "No meeting transcript available to generate suggestions."
+  end
+
+  defp suggestions_error_message({:config_error, _}) do
+    "AI is not configured. Set GEMINI_API_KEY in your environment."
+  end
+
+  defp suggestions_error_message(_reason) do
+    "Could not load contact or generate suggestions. Please try again."
+  end
+
+  defp contact_summary_from_record(record) when is_map(record) do
+    name =
+      record["Name"] ||
+        [record["FirstName"], record["LastName"]]
+        |> Enum.filter(& &1)
+        |> Enum.join(" ")
+
+    %{
+      "id" => record["Id"],
+      "name" => name,
+      "email" => record["Email"],
+      "phone" => record["Phone"],
+      "firstName" => record["FirstName"],
+      "lastName" => record["LastName"],
+      "title" => record["Title"]
+    }
   end
 
   defp normalize_contact(contact) do
@@ -276,11 +341,12 @@ defmodule SocialScribeWeb.MeetingLive.Show do
     else
       case SalesforceApi.update_contact(conn, contact_id, attrs) do
         :ok ->
+          field_count = map_size(attrs)
+          success_message = "Success! #{field_count} field(s) updated in Salesforce."
           socket
-          |> put_flash(:info, "Contact updated in Salesforce.")
-          |> push_patch(to: ~p"/dashboard/meetings/#{socket.assigns.meeting}")
-
-          {:noreply, socket}
+          |> put_flash(:info, success_message)
+          |> assign(:update_success, success_message)
+          |> then(fn s -> {:noreply, s} end)
 
         {:error, _} ->
           {:noreply, put_flash(socket, :error, "Failed to update Salesforce contact.")}
@@ -288,10 +354,50 @@ defmodule SocialScribeWeb.MeetingLive.Show do
     end
   end
 
-  def format_contact_value(nil), do: "—"
-  def format_contact_value(""), do: "—"
+  def format_contact_value(nil), do: "No existing value"
+  def format_contact_value(""), do: "No existing value"
   def format_contact_value(val) when is_binary(val), do: val
   def format_contact_value(val), do: to_string(val)
+
+  @salesforce_field_labels %{
+    "FirstName" => "First name",
+    "LastName" => "Last name",
+    "Email" => "Email",
+    "Phone" => "Phone",
+    "Title" => "Title",
+    "Department" => "Department",
+    "Description" => "Description",
+    "MailingStreet" => "Mailing street",
+    "MailingCity" => "Mailing city",
+    "MailingState" => "Mailing state",
+    "MailingPostalCode" => "Mailing postal code",
+    "MailingCountry" => "Mailing country"
+  }
+  def salesforce_field_label(field) when is_binary(field) do
+    Map.get(@salesforce_field_labels, field) || field
+  end
+
+  def contact_initials(contact) when is_map(contact) do
+    first = contact["FirstName"] || contact["firstName"]
+    last = contact["LastName"] || contact["lastName"]
+    name = contact["name"]
+
+    cond do
+      is_binary(first) and is_binary(last) ->
+        String.first(first) <> String.first(last) |> String.upcase()
+
+      is_binary(name) and name != "" ->
+        name
+        |> String.split(" ", parts: 2)
+        |> Enum.map(&String.first/1)
+        |> Enum.join()
+        |> String.upcase()
+        |> String.slice(0, 2)
+
+      true ->
+        "?"
+    end
+  end
 
   defp format_duration(nil), do: "N/A"
 
