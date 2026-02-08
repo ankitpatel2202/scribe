@@ -39,8 +39,15 @@ defmodule SocialScribe.CalendarSyncronizer do
          :ok <- sync_items(items, credential.user_id, credential.id) do
       :ok
     else
+      {:error, {:refresh_failed, {_status, %{"error_description" => desc}}}} = reason
+      when is_binary(desc) ->
+        Logger.warning(
+          "Calendar sync skipped for credential #{credential.id} (user_id: #{credential.user_id}): no refresh token. " <>
+            "User should re-connect their Google account in Settings to restore calendar sync."
+        )
+        reason
+
       {:error, reason} ->
-        # Log errors but don't crash the sync for other accounts
         Logger.error("Failed to sync credential #{credential.id}: #{inspect(reason)}")
         {:error, reason}
     end

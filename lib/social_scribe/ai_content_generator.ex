@@ -136,6 +136,81 @@ defmodule SocialScribe.AIContentGenerator do
     end
   end
 
+  @impl SocialScribe.AIContentGeneratorApi
+  def generate_salesforce_contact_updates(meeting, contact_record) do
+    case Meetings.generate_prompt_for_meeting(meeting) do
+      {:error, _reason} ->
+        {:error, :no_transcript}
+
+      {:ok, meeting_prompt} ->
+        contact_json = Jason.encode!(contact_record, pretty: false)
+
+        prompt = """
+        You are analyzing a meeting transcript to suggest updates to a Salesforce Contact record.
+        Given the meeting transcript and the CURRENT contact record (JSON) below, suggest only updates that are explicitly or clearly implied in the transcript.
+        Examples: if someone says "my phone number is 8885550000" suggest updating Phone; if they say "you can reach me at new@email.com" suggest Email.
+
+        Return ONLY a valid JSON array of objects. Each object must have exactly these keys:
+        - "field": Salesforce Contact API field name (e.g. Phone, Email, Title, MailingStreet, MailingCity, MailingState, MailingPostalCode, MailingCountry, FirstName, LastName, Department, Description)
+        - "current_value": the current value in the contact record (string or null)
+        - "suggested_value": the new value to set (string)
+        - "reason": one short sentence explaining why (from the transcript)
+
+        Only include fields that should be updated based on the transcript. If nothing should be updated, return empty array: []
+        Do not include markdown or code fences, only the JSON array.
+
+        Current Contact (JSON):
+        #{contact_json}
+
+        Meeting transcript:
+        #{meeting_prompt}
+        """
+
+        case call_gemini(prompt) do
+          {:ok, text} ->
+            parse_contact_updates_response(text)
+
+          {:error, _} = err ->
+            err
+        end
+    end
+  end
+
+  defp parse_contact_updates_response(text) when is_binary(text) do
+    trimmed =
+      text
+      |> String.trim()
+      |> String.replace(~r/^```\w*\n?/, "")
+      |> String.replace(~r/\n?```$/, "")
+      |> String.trim()
+
+    case Jason.decode(trimmed) do
+      {:ok, list} when is_list(list) ->
+        validated =
+          list
+          |> Enum.filter(&is_map/1)
+          |> Enum.map(&validate_suggestion/1)
+          |> Enum.reject(&is_nil/1)
+
+        {:ok, validated}
+
+      _ ->
+        {:error, {:parsing_error, "AI did not return valid JSON array", text}}
+    end
+  end
+
+  defp validate_suggestion(%{"field" => field, "suggested_value" => suggested} = m)
+       when is_binary(field) do
+    %{
+      "field" => field,
+      "current_value" => Map.get(m, "current_value"),
+      "suggested_value" => suggested |> to_string(),
+      "reason" => Map.get(m, "reason") || "From meeting"
+    }
+  end
+
+  defp validate_suggestion(_), do: nil
+
   defp call_gemini(prompt_text) do
     api_key = Application.get_env(:social_scribe, :gemini_api_key)
 

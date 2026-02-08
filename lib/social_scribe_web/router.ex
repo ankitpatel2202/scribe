@@ -68,6 +68,9 @@ defmodule SocialScribeWeb.Router do
   scope "/dashboard", SocialScribeWeb do
     pipe_through [:browser, :require_authenticated_user]
 
+    get "/auth/salesforce", SalesforceAuthController, :request
+    get "/auth/salesforce/callback", SalesforceAuthController, :callback
+
     live_session :require_authenticated_user,
       on_mount: [
         {SocialScribeWeb.UserAuth, :ensure_authenticated},
@@ -83,6 +86,7 @@ defmodule SocialScribeWeb.Router do
       live "/meetings/:id", MeetingLive.Show, :show
       live "/meetings/:id/draft_post/:automation_result_id", MeetingLive.Show, :draft_post
       live "/meetings/:id/hubspot", MeetingLive.Show, :hubspot
+      live "/meetings/:id/crm_contact", MeetingLive.Show, :crm_contact
 
       live "/automations", AutomationLive.Index, :index
       live "/automations/new", AutomationLive.Index, :new

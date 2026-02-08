@@ -10,6 +10,7 @@ defmodule SocialScribe.Accounts.User do
     field :confirmed_at, :utc_datetime
 
     has_many :user_credentials, SocialScribe.Accounts.UserCredential
+    has_many :crm_connections, SocialScribe.Accounts.CrmConnection
 
     timestamps(type: :utc_datetime)
   end

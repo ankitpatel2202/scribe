@@ -8,7 +8,7 @@ defmodule SocialScribe.Accounts do
   alias SocialScribe.Repo
   alias Ueberauth.Auth
 
-  alias SocialScribe.Accounts.{User, UserToken, UserCredential}
+  alias SocialScribe.Accounts.{User, UserToken, UserCredential, CrmConnection}
 
   ## Database getters
 
@@ -535,5 +535,52 @@ defmodule SocialScribe.Accounts do
   @doc "Gets a specific linked Facebook Page for a user."
   def get_linked_facebook_page(user, facebook_page_id) do
     Repo.get_by(FacebookPageCredential, user_id: user.id, facebook_page_id: facebook_page_id)
+  end
+
+  ## CRM Connections (Salesforce, future CRMs)
+
+  @doc "Lists CRM connections for a user."
+  def list_crm_connections(user) do
+    from(c in CrmConnection, where: c.user_id == ^user.id, order_by: [asc: c.provider])
+    |> Repo.all()
+  end
+
+  @doc "Gets a CRM connection by user and provider."
+  def get_crm_connection(user, provider) when is_binary(provider) do
+    Repo.get_by(CrmConnection, user_id: user.id, provider: provider)
+  end
+
+  @doc "Gets a CRM connection by id (ensures it belongs to user)."
+  def get_user_crm_connection!(user, id) do
+    Repo.get_by!(CrmConnection, id: id, user_id: user.id)
+  end
+
+  @doc "Creates or updates a CRM connection from OAuth callback data."
+  def upsert_crm_connection(user, provider, attrs) do
+    case get_crm_connection(user, provider) do
+      nil ->
+        attrs
+        |> Map.put(:user_id, user.id)
+        |> Map.put(:provider, provider)
+        |> then(&CrmConnection.changeset(%CrmConnection{}, &1))
+        |> Repo.insert()
+
+      conn ->
+        conn
+        |> CrmConnection.changeset(attrs)
+        |> Repo.update()
+    end
+  end
+
+  @doc "Updates a CRM connection's tokens (e.g. after refresh)."
+  def update_crm_connection_tokens(%CrmConnection{} = conn, attrs) do
+    conn
+    |> CrmConnection.changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc "Deletes a CRM connection."
+  def delete_crm_connection(%CrmConnection{} = conn) do
+    Repo.delete(conn)
   end
 end

@@ -10,6 +10,9 @@ defmodule SocialScribeWeb.MeetingLive.Show do
   alias SocialScribe.Accounts
   alias SocialScribe.HubspotApiBehaviour, as: HubspotApi
   alias SocialScribe.HubspotSuggestions
+  
+  alias SocialScribe.SalesforceApi
+  alias SocialScribe.AIContentGeneratorApi
 
   @impl true
   def mount(%{"id" => meeting_id}, _session, socket) do
@@ -45,9 +48,33 @@ defmodule SocialScribeWeb.MeetingLive.Show do
             "follow_up_email" => ""
           })
         )
+        |> assign(:salesforce_connection, nil)
+        |> assign(:contact_search_query, "")
+        |> assign(:contact_results, [])
+        |> assign(:selected_contact, nil)
+        |> assign(:contact_record, nil)
+        |> assign(:suggestions, [])
+        |> assign(:loading_suggestions, false)
+        |> assign(:crm_contact_search_form, to_form(%{"query" => ""}))
 
       {:ok, socket}
     end
+  end
+
+  @impl true
+  def handle_params(%{"id" => _id}, _uri, %{assigns: %{live_action: :crm_contact}} = socket) do
+    salesforce_connection = Accounts.get_crm_connection(socket.assigns.current_user, "salesforce")
+
+    socket =
+      socket
+      |> assign(:salesforce_connection, salesforce_connection)
+      |> assign(:contact_results, [])
+      |> assign(:selected_contact, nil)
+      |> assign(:contact_record, nil)
+      |> assign(:suggestions, [])
+      |> assign(:loading_suggestions, false)
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -75,6 +102,33 @@ defmodule SocialScribeWeb.MeetingLive.Show do
       |> assign(:follow_up_email_form, to_form(params))
 
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("search_contacts", %{"query" => query}, socket) do
+    query = String.trim(query)
+    result = do_search_contacts(socket.assigns.salesforce_connection, query)
+
+    socket =
+      socket
+      |> assign(:contact_search_query, query)
+      |> assign(:contact_results, result)
+      |> assign(:crm_contact_search_form, to_form(%{"query" => query}))
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("select_contact", %{"contact_id" => contact_id}, socket) do
+    socket = assign(socket, :loading_suggestions, true)
+    send(self(), {:load_contact_and_suggest, contact_id})
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("apply_suggestions", %{"fields" => fields}, socket) do
+    fields = List.wrap(fields) |> Enum.filter(&(is_binary(&1) and &1 != ""))
+    apply_suggestions_to_salesforce(socket, fields)
   end
 
   @impl true
@@ -144,10 +198,100 @@ defmodule SocialScribeWeb.MeetingLive.Show do
     end
   end
 
+  @impl true
+  def handle_info({:load_contact_and_suggest, contact_id}, socket) do
+    conn = socket.assigns.salesforce_connection
+    meeting = socket.assigns.meeting
+
+    result =
+      with {:ok, record} <- SalesforceApi.get_contact(conn, contact_id),
+           {:ok, suggestions} <-
+             AIContentGeneratorApi.generate_salesforce_contact_updates(meeting, record) do
+        summary =
+          Enum.find(socket.assigns.contact_results, fn c -> c["id"] == contact_id end)
+
+        {:ok,
+         %{
+           record: record,
+           suggestions: merge_current_values(record, suggestions),
+           summary: summary
+         }}
+      else
+        {:error, reason} -> {:error, reason}
+      end
+
+    socket =
+      case result do
+        {:ok, %{record: record, suggestions: suggestions, summary: summary}} ->
+          socket
+          |> assign(:contact_record, record)
+          |> assign(:selected_contact, summary)
+          |> assign(:suggestions, suggestions)
+          |> assign(:loading_suggestions, false)
+
+        {:error, _reason} ->
+          socket
+          |> put_flash(:error, "Could not load contact or generate suggestions.")
+          |> assign(:loading_suggestions, false)
+      end
+
+    {:noreply, socket}
+  end
+
   defp normalize_contact(contact) do
     # Contact is already formatted with atom keys from HubspotApi.format_contact
     contact
   end
+
+  defp do_search_contacts(nil, _query), do: []
+  defp do_search_contacts(_conn, ""), do: []
+
+  defp do_search_contacts(conn, query) do
+    case SalesforceApi.search_contacts(conn, query) do
+      {:ok, results} -> results
+      {:error, _} -> []
+    end
+  end
+
+  defp merge_current_values(contact_record, suggestions) when is_list(suggestions) do
+    Enum.map(suggestions, fn s ->
+      field = s["field"]
+      current = Map.get(contact_record, field) || s["current_value"]
+      Map.put(s, "current_value", current)
+    end)
+  end
+
+  defp apply_suggestions_to_salesforce(socket, fields) do
+    conn = socket.assigns.salesforce_connection
+    contact_id = socket.assigns.contact_record["Id"]
+    suggestions = socket.assigns.suggestions
+
+    attrs =
+      suggestions
+      |> Enum.filter(fn s -> s["field"] in fields end)
+      |> Map.new(fn s -> {s["field"], s["suggested_value"]} end)
+
+    if map_size(attrs) == 0 do
+      {:noreply, put_flash(socket, :error, "No updates selected.")}
+    else
+      case SalesforceApi.update_contact(conn, contact_id, attrs) do
+        :ok ->
+          socket
+          |> put_flash(:info, "Contact updated in Salesforce.")
+          |> push_patch(to: ~p"/dashboard/meetings/#{socket.assigns.meeting}")
+
+          {:noreply, socket}
+
+        {:error, _} ->
+          {:noreply, put_flash(socket, :error, "Failed to update Salesforce contact.")}
+      end
+    end
+  end
+
+  def format_contact_value(nil), do: "—"
+  def format_contact_value(""), do: "—"
+  def format_contact_value(val) when is_binary(val), do: val
+  def format_contact_value(val), do: to_string(val)
 
   defp format_duration(nil), do: "N/A"
 

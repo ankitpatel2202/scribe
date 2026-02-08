@@ -124,18 +124,6 @@ defmodule SocialScribe.Bots do
 
   defp bot_status_from_response(_), do: "unknown"
 
-  # Unwraps RecallApi.create_bot result to a value we can case on: body map or nil.
-  # Handles both %Tesla.Env{} and mock-style %{body: body}.
-  defp unwrap_recall_create_response(result) do
-    case result do
-      {:ok, %Tesla.Env{status: status, body: body}} when status in 200..299 -> body
-      {:ok, %Tesla.Env{body: body}} when is_map(body) -> body
-      {:ok, %{body: body}} when is_map(body) -> body
-      {:ok, _} -> nil
-      {:error, _} -> nil
-    end
-  end
-
   @doc """
   Orchestrates creating a bot via the API and saving it to the database.
   """

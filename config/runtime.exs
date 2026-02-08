@@ -45,6 +45,14 @@ config :ueberauth, Ueberauth.Strategy.Hubspot.OAuth,
   client_id: System.get_env("HUBSPOT_CLIENT_ID"),
   client_secret: System.get_env("HUBSPOT_CLIENT_SECRET")
 
+# Salesforce OAuth (Connected App). Redirect URI must match exactly in your Connected App.
+# Use http://localhost:4000/dashboard/auth/salesforce/callback for local (note /dashboard in path).
+# For sandbox set SALESFORCE_AUTH_BASE_URL=https://test.salesforce.com (default: production)
+config :social_scribe, :salesforce_client_id, System.get_env("SALESFORCE_CLIENT_ID")
+config :social_scribe, :salesforce_client_secret, System.get_env("SALESFORCE_CLIENT_SECRET")
+config :social_scribe, :salesforce_redirect_uri, System.get_env("SALESFORCE_REDIRECT_URI")
+config :social_scribe, :salesforce_auth_base_url, System.get_env("SALESFORCE_AUTH_BASE_URL") || "https://login.salesforce.com"
+
 if System.get_env("PHX_SERVER") do
   config :social_scribe, SocialScribeWeb.Endpoint, server: true
 end
