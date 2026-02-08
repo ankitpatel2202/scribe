@@ -82,6 +82,16 @@ defmodule SocialScribe.Recall do
 
   @impl SocialScribe.RecallApi
   def get_bot_transcript(recall_bot_id) do
+    case get_transcript_via_recording(recall_bot_id) do
+      {:ok, _} = ok -> ok
+      {:error, :no_recordings} -> fallback_get_bot_transcript(recall_bot_id)
+      {:error, :no_transcript_url} -> fallback_get_bot_transcript(recall_bot_id)
+      {:error, _} = err -> err
+    end
+  end
+
+  # Primary: transcript from recording media_shortcuts (download_url).
+  defp get_transcript_via_recording(recall_bot_id) do
     with {:ok, %{body: bot_info}} <- get_bot(recall_bot_id),
          [%{id: recording_id} | _] <- Map.get(bot_info, :recordings, []),
          {:ok, %{body: recording}} <- get_recording(recording_id),
@@ -94,6 +104,29 @@ defmodule SocialScribe.Recall do
       {:error, reason} -> {:error, reason}
     end
   end
+
+  # Fallback: direct GET /bot/{id}/transcript/ (e.g. when recording URL not yet ready or different provider).
+  defp fallback_get_bot_transcript(recall_bot_id) do
+    case Tesla.get(client(), "/bot/#{recall_bot_id}/transcript/") do
+      {:ok, %Tesla.Env{status: status, body: body}} when status in 200..299 ->
+        # API may return a list or %{"transcript" => list} / %{"data" => list}; normalize to Env with list body.
+        list = normalize_transcript_body(body)
+        {:ok, %Tesla.Env{status: status, body: list}}
+
+      {:ok, %Tesla.Env{status: 404}} ->
+        {:error, :no_transcript_url}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp normalize_transcript_body(list) when is_list(list), do: list
+  defp normalize_transcript_body(%{"transcript" => list}) when is_list(list), do: list
+  defp normalize_transcript_body(%{"data" => list}) when is_list(list), do: list
+  defp normalize_transcript_body(%{transcript: list}) when is_list(list), do: list
+  defp normalize_transcript_body(%{data: list}) when is_list(list), do: list
+  defp normalize_transcript_body(_), do: []
 
   defp get_recording(recording_id) do
     Tesla.get(client(), "/recording/#{recording_id}")

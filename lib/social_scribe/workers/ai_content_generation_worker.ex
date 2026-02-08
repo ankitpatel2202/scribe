@@ -22,8 +22,11 @@ defmodule SocialScribe.Workers.AIContentGenerationWorker do
           :ok ->
             if meeting.calendar_event && meeting.calendar_event.user_id do
               process_user_automations(meeting, meeting.calendar_event.user_id)
-              :ok
             end
+            :ok
+
+          {:snooze, seconds} ->
+            {:snooze, seconds}
 
           {:error, reason} ->
             {:error, reason}
@@ -48,6 +51,12 @@ defmodule SocialScribe.Workers.AIContentGenerationWorker do
 
             {:error, :db_update_failed}
         end
+
+      {:error, {:api_error, 429, _body}} ->
+        Logger.warning(
+          "Gemini rate limit (429) for meeting #{meeting.id}; job will retry in 60s"
+        )
+        {:snooze, 60}
 
       {:error, reason} ->
         Logger.error(

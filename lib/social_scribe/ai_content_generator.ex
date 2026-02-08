@@ -243,6 +243,22 @@ defmodule SocialScribe.AIContentGenerator do
             text_content -> {:ok, text_content}
           end
 
+        {:ok, %Tesla.Env{status: 429, body: error_body}} ->
+          # Rate limited: wait and retry once (Gemini often suggests ~35s)
+          wait_seconds = parse_retry_after_seconds(error_body) || 40
+          Process.sleep(min(wait_seconds, 90) * 1000)
+          case Tesla.post(client(), path, payload) do
+            {:ok, %Tesla.Env{status: 200, body: body}} ->
+              case get_in(body, ["candidates", Access.at(0), "content", "parts", Access.at(0), "text"]) do
+                nil -> {:error, {:parsing_error, "No text content found in Gemini response", body}}
+                text_content -> {:ok, text_content}
+              end
+            {:ok, %Tesla.Env{status: status, body: retry_body}} ->
+              {:error, {:api_error, status, retry_body}}
+            {:error, reason} ->
+              {:error, {:http_error, reason}}
+          end
+
         {:ok, %Tesla.Env{status: status, body: error_body}} ->
           {:error, {:api_error, status, error_body}}
 
@@ -257,5 +273,39 @@ defmodule SocialScribe.AIContentGenerator do
       {Tesla.Middleware.BaseUrl, @gemini_api_base_url},
       Tesla.Middleware.JSON
     ])
+  end
+
+  # Parse Gemini 429 body for retry delay (e.g. "35s" or "Please retry in 35.2s").
+  defp parse_retry_after_seconds(%{"error" => err}), do: parse_retry_from_details(err) || parse_retry_from_message(err)
+  defp parse_retry_after_seconds(_), do: nil
+
+  defp parse_retry_from_details(%{"details" => details}) when is_list(details) do
+    Enum.find_value(details, fn
+      %{"@type" => "type.googleapis.com/google.rpc.RetryInfo", "retryDelay" => delay}
+      when is_binary(delay) ->
+        parse_retry_delay_string(delay)
+      _ ->
+        nil
+    end)
+  end
+  defp parse_retry_from_details(_), do: nil
+
+  defp parse_retry_from_message(%{"message" => msg}) when is_binary(msg) do
+    case Regex.run(~r/retry in (\d+(?:\.\d+)?)s/i, msg) do
+      [_, num] ->
+        case Float.parse(num) do
+          {f, _} -> ceil(f)
+          :error -> nil
+        end
+      nil -> nil
+    end
+  end
+  defp parse_retry_from_message(_), do: nil
+
+  defp parse_retry_delay_string(str) do
+    case Float.parse(String.trim(str, "sS")) do
+      {sec, _} -> sec |> ceil()
+      :error -> nil
+    end
   end
 end

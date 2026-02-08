@@ -146,7 +146,7 @@ Now you can visit [`localhost:4000`](http://localhost:4000) from your browser.
 ## ⚙️ Functionality Deep Dive
 
 * **Connect & Sync:** Users log in with Google. The "Settings" page allows connecting multiple Google accounts, plus LinkedIn and Facebook accounts. For Facebook, after initial connection, users are guided to select a Page for posting. Calendars are synced to a database to populate the dashboard with upcoming events.
-* **Record & Transcribe:** On the dashboard, users toggle "Record Meeting?" for desired events. The system extracts meeting links (Zoom, Meet) and uses Recall.ai to dispatch a bot. A background poller (`BotStatusPoller`) checks for completed recordings and transcripts, saving the data to local `Meeting`, `MeetingTranscript`, and `MeetingParticipant` tables.
+* **Record & Transcribe:** On the dashboard, users toggle "Record Meeting?" for desired events. The system extracts meeting links (Zoom, Meet) and uses Recall.ai to dispatch a bot. A background poller (`BotStatusPoller`) checks for completed recordings and transcripts, saving the data to local `Meeting`, `MeetingTranscript`, and `MeetingParticipant` tables. **Important:** Transcripts are only saved into the app when the bot was created from this app (i.e. you turned on "Record Meeting?" for that event before the meeting). If a bot joined via Recall.ai dashboard or another integration, no row exists in the app’s `recall_bots` table, so the poller will not create a meeting/transcript.
 * **AI Content Generation:**
     * Once a meeting is processed, an `AIContentGenerationWorker` is enqueued.
     * This worker uses Google Gemini to draft a follow-up email.
