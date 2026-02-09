@@ -9,14 +9,14 @@ Hooks.MentionInput = {
     this.el.addEventListener("input", pushCursor)
     this.el.addEventListener("keyup", pushCursor)
     this.el.addEventListener("click", pushCursor)
-  },
-  handleEvent("set_ask_input_value", (payload) => {
-    const value = payload && payload.value
-    if (this.el && typeof value === "string") {
-      this.el.value = value
-      this.pushEvent("update_input", { text: value })
-    }
-  })
+    this.handleEvent("set_ask_input_value", (payload) => {
+      const value = payload && payload.value
+      if (this.el && typeof value === "string") {
+        this.el.value = value
+        this.pushEvent("update_input", { text: value })
+      }
+    })
+  }
 }
 
 Hooks.SelectContactWithText = {
