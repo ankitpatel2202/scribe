@@ -139,18 +139,17 @@
           </button>
         </div>
 
-        <div class="relative">
-          <form phx-submit="send_message" class="flex gap-2 items-end">
+        <div class="relative" id="ask-input-and-dropdown" phx-click-away="close_contact_search">
+          <form phx-submit="send_message" phx-change="update_input" phx-debounce="150" class="flex gap-2 items-end">
             <div class="flex-1 relative rounded-xl border-2 border-blue-200 bg-white focus-within:border-blue-400 transition">
               <textarea
+                id="ask-message-input"
                 name="text"
-                value={@input_text}
-                placeholder="Ask anything about your contacts"
+                placeholder="Ask anything about your contacts (type @ to mention)"
                 rows="3"
                 class="w-full resize-none rounded-xl border-0 bg-transparent px-4 py-3 text-gray-900 placeholder-gray-400 focus:ring-0 text-sm"
-                phx-blur="close_contact_search"
-                phx-change="update_input"
-              ></textarea>
+                phx-hook="MentionInput"
+              ><%= @input_text %></textarea>
               <%= if Enum.any?(@tagged_contacts) do %>
                 <div class="flex flex-wrap gap-1.5 px-3 pb-2">
                   <span :for={tc <- @tagged_contacts} class="inline-flex items-center gap-1 rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-800">
@@ -173,8 +172,9 @@
 
           <%= if @contact_search_open do %>
             <div
+              id="contact-search-dropdown"
+              phx-hook="SelectContactWithText"
               class="absolute left-0 right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto py-1"
-              phx-click-away="close_contact_search"
             >
               <div class="px-3 py-2 border-b border-gray-100">
                 <input
@@ -184,7 +184,6 @@
                   phx-keyup="contact_search"
                   phx-debounce="150"
                   class="w-full text-sm border-0 focus:ring-0"
-                  autofocus
                 />
               </div>
               <%= if @contact_search_loading do %>
@@ -193,10 +192,9 @@
                 <button
                   :for={c <- @contact_search_results}
                   type="button"
-                  phx-click="select_contact"
-                  phx-value-id={c["id"]}
-                  phx-value-name={c["name"] || c["id"]}
-                  phx-value-provider={c["provider"]}
+                  data-contact-id={c["id"]}
+                  data-contact-name={c["name"] || c["id"]}
+                  data-contact-provider={c["provider"]}
                   class="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm text-gray-800 flex items-center gap-2"
                 >
                   <.icon name="hero-user" class="w-4 h-4 text-gray-500" />

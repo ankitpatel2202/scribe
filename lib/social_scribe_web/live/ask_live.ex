@@ -66,6 +66,8 @@ defmodule SocialScribeWeb.AskLive do
       |> assign(:contact_search_open, false)
       |> assign(:contact_search_loading, false)
       |> assign(:sending, false)
+      |> assign(:cursor_position, nil)
+      |> assign(:mention_start, nil)
       |> assign(:active_tab, :chat)
       |> assign(:history_sessions, [])
       |> assign(:error, nil)
@@ -156,8 +158,60 @@ defmodule SocialScribeWeb.AskLive do
 
   def handle_event("send_message", _, socket), do: {:noreply, socket}
 
+  def handle_event("cursor_position", %{"position" => pos}, socket) do
+    pos =
+      cond do
+        is_integer(pos) -> pos
+        is_binary(pos) and pos != "" -> String.to_integer(pos)
+        true -> nil
+      end
+
+    {:noreply, assign(socket, :cursor_position, pos)}
+  end
+
   def handle_event("update_input", %{"text" => text}, socket) do
-    {:noreply, assign(socket, :input_text, text)}
+    socket = assign(socket, :input_text, text)
+    cursor = socket.assigns.cursor_position || String.length(text)
+
+    # Detect @mention: find last "@" before cursor and open contact search only for NEW mentions.
+    # Don't open if the text after @ is an already-tagged contact (e.g. "@Ankit sing" after selecting Ankit).
+    {socket, _} =
+      if is_integer(cursor) and cursor >= 0 and cursor <= String.length(text) do
+        before_cursor = String.slice(text, 0, cursor)
+        case find_mention_start(before_cursor) do
+          nil ->
+            {socket, nil}
+          start_idx ->
+            rest_start = start_idx + 1
+            rest_len = max(0, byte_size(text) - rest_start)
+            query_part = text |> String.slice(rest_start, rest_len) |> String.split(~r/\s/) |> List.first() || ""
+
+            # Skip opening if this @ is followed by an already-tagged contact name (stops search after selecting)
+            if query_part_matches_tagged_contact?(query_part, socket.assigns.tagged_contacts) do
+              {assign(socket, :contact_search_open, false), nil}
+            else
+              socket =
+                socket
+                |> assign(:mention_start, start_idx)
+                |> assign(:contact_search_open, true)
+                |> assign(:contact_search_query, query_part)
+                |> then(fn s ->
+                  if String.length(query_part) >= 2 do
+                    send(self(), {:run_contact_search, query_part})
+                    assign(s, :contact_search_loading, true)
+                  else
+                    assign(s, :contact_search_results, [])
+                    assign(s, :contact_search_loading, false)
+                  end
+                end)
+              {socket, start_idx}
+            end
+        end
+      else
+        {socket, nil}
+      end
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -182,10 +236,46 @@ defmodule SocialScribeWeb.AskLive do
   end
 
   @impl true
-  def handle_event("select_contact", %{"id" => id, "name" => name, "provider" => provider}, socket) do
+  def handle_event("select_contact", %{"id" => id, "name" => name, "provider" => provider} = params, socket) do
     contact = %{"id" => id, "name" => name, "provider" => provider}
     tagged = socket.assigns.tagged_contacts
     tagged = if Enum.any?(tagged, fn t -> t["id"] == id end), do: tagged, else: tagged ++ [contact]
+
+    # Use client-provided text when present (ensures we have what's actually in the textarea)
+    text = params["text"]
+    text = if is_binary(text) and text != "", do: text, else: socket.assigns.input_text
+    query = socket.assigns.contact_search_query || ""
+
+    # Find @ position: prefer exact "@" <> query in text (most reliable), else last valid @
+    start_idx = find_at_index_for_query(text, query)
+
+    {socket, new_text} =
+      if is_integer(start_idx) and start_idx >= 0 and byte_size(text) > start_idx do
+        len = byte_size(text)
+        rest_start = start_idx + 1
+        rest_len = max(0, len - rest_start)
+        rest = String.slice(text, rest_start, rest_len)
+        query_part = rest |> String.split(~r/\s/) |> List.first() || ""
+        end_pos = min(start_idx + 1 + String.length(query_part), len)
+        before = String.slice(text, 0, start_idx)
+        after_len = max(0, len - end_pos)
+        after_mention = String.slice(text, end_pos, after_len)
+        new_text = before <> "@" <> name <> " " <> after_mention
+        socket = socket
+          |> assign(:input_text, new_text)
+          |> assign(:mention_start, nil)
+        {socket, new_text}
+      else
+        {socket, nil}
+      end
+
+    # Push value to client so textarea is updated even if a race overwrites the assign
+    socket =
+      if new_text do
+        push_event(socket, "set_ask_input_value", %{value: new_text})
+      else
+        socket
+      end
 
     {:noreply,
      socket
@@ -208,7 +298,7 @@ defmodule SocialScribeWeb.AskLive do
 
   @impl true
   def handle_event("close_contact_search", _, socket) do
-    {:noreply, assign(socket, :contact_search_open, false)}
+    {:noreply, socket |> assign(:contact_search_open, false) |> assign(:mention_start, nil)}
   end
 
   @impl true
@@ -252,6 +342,70 @@ defmodule SocialScribeWeb.AskLive do
          |> assign(:messages, session.messages)
          |> assign(:active_tab, :chat)
          |> push_patch(to: ~p"/dashboard/ask")}
+    end
+  end
+
+  # True if the text after @ (query_part) is the start of an already-tagged contact name.
+  # Stops the dropdown from reopening when user keeps typing after selecting a contact.
+  defp query_part_matches_tagged_contact?(_query_part, []), do: false
+
+  defp query_part_matches_tagged_contact?(query_part, tagged_contacts) when is_binary(query_part) do
+    name = String.trim(query_part)
+    Enum.any?(tagged_contacts, fn t ->
+      contact_name = t["name"] || t[:name] || ""
+      name != "" and (contact_name == name or String.starts_with?(contact_name, name))
+    end)
+  end
+
+  defp find_mention_start(before_cursor) do
+    parts = String.split(before_cursor, "@")
+    if length(parts) <= 1, do: nil, else: last_at_index(parts, before_cursor)
+  end
+
+  defp last_at_index(parts, before_cursor) do
+    before_last = parts |> Enum.drop(-1) |> Enum.join("@")
+    idx = byte_size(before_last)
+    before_at = if idx > 0, do: String.slice(before_cursor, idx - 1, 1), else: " "
+    if before_at in [" ", "\n"] or idx == 0, do: idx, else: nil
+  end
+
+  # Find the last @ in full text that starts a mention (at start or after space/newline).
+  defp find_last_mention_position(""), do: nil
+  defp find_last_mention_position(text) when is_binary(text) do
+    parts = String.split(text, "@")
+    if length(parts) <= 1 do
+      nil
+    else
+      before_last = parts |> Enum.take(length(parts) - 1) |> Enum.join("@")
+      idx = byte_size(before_last)
+      before_at = if idx > 0, do: String.slice(text, idx - 1, 1), else: " "
+      if before_at in [" ", "\n", "\r"] or idx == 0, do: idx, else: nil
+    end
+  end
+
+  # Find start index of "@query" in text (last occurrence). Most reliable when we have the exact query.
+  defp find_at_index_for_query(text, query) when is_binary(text) and is_binary(query) and query != "" do
+    needle = "@" <> query
+    case last_index_of(text, needle) do
+      nil -> find_last_mention_position(text)
+      idx -> idx
+    end
+  end
+  defp find_at_index_for_query(text, _), do: find_last_mention_position(text)
+
+  defp last_index_of(haystack, needle) when is_binary(haystack) and is_binary(needle) do
+    len = byte_size(needle)
+    if len == 0 or byte_size(haystack) < len do
+      nil
+    else
+      last_index_of(haystack, needle, 0, nil)
+    end
+  end
+
+  defp last_index_of(haystack, needle, start, last) do
+    case :binary.match(haystack, needle, scope: {start, byte_size(haystack) - start}) do
+      {idx, _} -> last_index_of(haystack, needle, idx + 1, idx)
+      :nomatch -> last
     end
   end
 
