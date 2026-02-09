@@ -55,7 +55,7 @@ defmodule SocialScribe.Facebook do
         {:ok, valid_pages}
 
       {:ok, %Tesla.Env{status: status, body: body}} ->
-        {:error, "Failed to fetch user pages: #{status} - #{body}"}
+        {:error, "Failed to fetch user pages: #{status} - #{inspect(body)}"}
     end
   end
 

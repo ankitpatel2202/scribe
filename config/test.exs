@@ -33,6 +33,10 @@ config :swoosh, :api_client, false
 # Print only warnings and errors during test
 config :logger, level: :warning
 
+# Use Tesla.Mock globally so tests do not make real HTTP calls or log errors.
+# Each test file that uses Tesla should call Tesla.Mock.mock/1 in setup.
+config :tesla, adapter: Tesla.Mock
+
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
 

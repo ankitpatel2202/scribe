@@ -80,6 +80,28 @@ defmodule SocialScribe.AccountsFixtures do
   end
 
   @doc """
+  Generate a CRM connection (e.g. Salesforce).
+  """
+  def crm_connection_fixture(attrs \\ %{}) do
+    user_id = attrs[:user_id] || user_fixture().id
+    user = SocialScribe.Accounts.get_user!(user_id)
+    provider = attrs[:provider] || "salesforce"
+
+    base = %{
+      uid: "uid_#{System.unique_integer([:positive])}",
+      access_token: "access_#{System.unique_integer([:positive])}",
+      refresh_token: "refresh_#{System.unique_integer([:positive])}",
+      instance_url: "https://example.salesforce.com",
+      expires_at: DateTime.add(DateTime.utc_now(), 3600, :second)
+    }
+
+    merged = Map.merge(base, Map.drop(attrs, [:user_id, :provider]))
+
+    {:ok, conn} = SocialScribe.Accounts.upsert_crm_connection(user, provider, merged)
+    conn
+  end
+
+  @doc """
   Generate a facebook_page_credential.
   """
   def facebook_page_credential_fixture(attrs \\ %{}) do
