@@ -137,6 +137,29 @@ defmodule SocialScribe.AIContentGenerator do
   end
 
   @impl SocialScribe.AIContentGeneratorApi
+  def generate_contact_question_answer(question, contact_data_list) when is_binary(question) do
+    contact_json =
+      contact_data_list
+      |> Enum.reject(&is_nil/1)
+      |> Jason.encode!(pretty: false)
+
+    prompt = """
+    You are a helpful assistant that answers questions about CRM contacts.
+    The user asked a question about their contact(s). Use ONLY the following contact data to answer.
+    Be concise and accurate. If the contact data does not contain enough information to answer, say so.
+
+    Contact data (JSON):
+    #{contact_json}
+
+    User question: #{question}
+
+    Answer (plain text, no markdown):
+    """
+
+    call_gemini(prompt)
+  end
+
+  @impl SocialScribe.AIContentGeneratorApi
   def generate_salesforce_contact_updates(meeting, contact_record) do
     case Meetings.generate_prompt_for_meeting(meeting) do
       {:error, _reason} ->

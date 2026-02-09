@@ -78,6 +78,8 @@ defmodule SocialScribeWeb.Router do
       ],
       layout: {SocialScribeWeb.Layouts, :dashboard} do
       live "/", HomeLive
+      live "/ask", AskLive, :index
+      live "/ask/session/:session_id", AskLive, :session
 
       live "/settings", UserSettingsLive, :index
       live "/settings/facebook_pages", UserSettingsLive, :facebook_pages

@@ -1,0 +1,234 @@
+<div class="max-w-3xl mx-auto">
+  <% # Header: Ask Anything, expand icon, Chat | History, New chat + %>
+  <div class="mb-6">
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-2xl font-bold text-gray-900 tracking-tight">Ask Anything</h1>
+      <div class="flex items-center gap-2">
+        <button type="button" class="p-1.5 rounded text-gray-600 hover:bg-gray-100" aria-label="Expand">
+          <.icon name="hero-chevron-double-right" class="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+    <div class="flex items-center gap-1 border-b border-gray-100 pb-0">
+      <button
+        type="button"
+        phx-click="tab"
+        phx-value-tab="chat"
+        class={[
+          "px-4 py-2 text-sm font-medium rounded-t-lg transition",
+          @active_tab == :chat && "bg-gray-200 text-gray-900",
+          @active_tab != :chat && "text-gray-700 hover:bg-gray-50"
+        ]}
+      >
+        Chat
+      </button>
+      <button
+        type="button"
+        phx-click="tab"
+        phx-value-tab="history"
+        class={[
+          "px-4 py-2 text-sm font-medium rounded-t-lg transition",
+          @active_tab == :history && "bg-gray-200 text-gray-900",
+          @active_tab != :history && "text-gray-700 hover:bg-gray-50"
+        ]}
+      >
+        History
+      </button>
+      <button
+        type="button"
+        phx-click="new_chat"
+        class="ml-auto p-2 rounded text-gray-600 hover:bg-gray-100"
+        aria-label="New chat"
+      >
+        <.icon name="hero-plus" class="w-5 h-5" />
+      </button>
+    </div>
+  </div>
+
+  <%= if @active_tab == :history do %>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 min-h-[400px]">
+      <p class="text-sm text-gray-500 mb-4">Previous chats</p>
+      <ul class="space-y-2">
+        <li :for={s <- @history_sessions}>
+          <button
+            type="button"
+            phx-click="load_session"
+            phx-value-id={s.id}
+            class="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 text-gray-800 text-sm"
+          >
+            <%= s.title %> — <%= Timex.format!(s.updated_at, "%b %d, %Y %I:%M%p", :strftime) %>
+          </button>
+        </li>
+      </ul>
+      <%= if Enum.empty?(@history_sessions) do %>
+        <p class="text-gray-500 text-sm">No chat history yet.</p>
+      <% end %>
+    </div>
+  <% else %>
+    <% # Chat content area %>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col min-h-[500px]">
+      <div class="flex-1 overflow-y-auto p-6 flex flex-col">
+        <%= if not @crm_connected do %>
+          <p class="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm mb-4">
+            Connect HubSpot or Salesforce in Settings to ask questions about your contacts.
+          </p>
+        <% end %>
+
+        <%= if @error do %>
+          <p class="text-red-700 bg-red-50 border border-red-200 rounded-lg px-4 py-2 text-sm mb-4"><%= @error %></p>
+        <% end %>
+
+        <%= if Enum.empty?(@messages) do %>
+          <p class="text-center text-gray-400 text-sm mb-4">
+            <%= Timex.format!(DateTime.utc_now(), "%I:%M%p - %B %d, %Y", :strftime) %>
+          </p>
+          <p class="text-gray-900 mb-6">
+            I can answer questions about your contacts from your CRM – just ask!
+          </p>
+        <% else %>
+          <p class="text-center text-gray-400 text-sm mb-4">
+            <%= Timex.format!(DateTime.utc_now(), "%I:%M%p - %B %d, %Y", :strftime) %>
+          </p>
+          <div class="space-y-4">
+            <div :for={msg <- @messages} class={msg.role == "user" && "flex justify-end"}>
+              <%= if msg.role == "user" do %>
+                <div class="max-w-[85%] rounded-2xl rounded-br-md bg-gray-200 px-4 py-2.5 text-gray-900 text-sm">
+                  <.message_with_tags content={msg.content} tagged_contacts={tagged_list_for(msg)} />
+                </div>
+              <% else %>
+                <div class="max-w-[90%] text-gray-900 text-sm">
+                  <.message_with_tags content={msg.content} tagged_contacts={[]} />
+                  <div class="mt-2 flex items-center gap-2">
+                    <span class="text-gray-500 text-xs">Sources</span>
+                    <span class="flex items-center gap-2">
+                      <%= if Enum.any?(sources_list_for(msg)) do %>
+                        <%= for provider <- sources_list_for(msg) |> Enum.map(& &1["provider"]) |> Enum.uniq() |> Enum.reject(&is_nil/1) do %>
+                          <%= if path = provider_logo_path(provider) do %>
+                            <img src={path} alt={provider} title={String.capitalize(provider)} class="w-5 h-5 object-contain rounded" />
+                          <% end %>
+                        <% end %>
+                      <% else %>
+                        <span class="flex gap-1">
+                          <span class="w-2 h-2 rounded-full bg-gray-800"></span>
+                          <span class="w-2 h-2 rounded-full bg-orange-500"></span>
+                          <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                        </span>
+                      <% end %>
+                    </span>
+                  </div>
+                </div>
+              <% end %>
+            </div>
+          </div>
+        <% end %>
+
+        <%= if @sending do %>
+          <p class="text-gray-500 text-sm mt-4">Thinking...</p>
+        <% end %>
+      </div>
+
+      <% # Input area %>
+      <div class="p-4 border-t border-gray-100">
+        <div class="flex gap-2 mb-2">
+          <button
+            type="button"
+            phx-click="open_contact_search"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-200 text-gray-800 text-sm hover:bg-gray-300"
+          >
+            <span class="text-gray-600">@</span> Add context
+          </button>
+        </div>
+
+        <div class="relative">
+          <form phx-submit="send_message" class="flex gap-2 items-end">
+            <div class="flex-1 relative rounded-xl border-2 border-blue-200 bg-white focus-within:border-blue-400 transition">
+              <textarea
+                name="text"
+                value={@input_text}
+                placeholder="Ask anything about your contacts"
+                rows="3"
+                class="w-full resize-none rounded-xl border-0 bg-transparent px-4 py-3 text-gray-900 placeholder-gray-400 focus:ring-0 text-sm"
+                phx-blur="close_contact_search"
+                phx-change="update_input"
+              ></textarea>
+              <%= if Enum.any?(@tagged_contacts) do %>
+                <div class="flex flex-wrap gap-1.5 px-3 pb-2">
+                  <span :for={tc <- @tagged_contacts} class="inline-flex items-center gap-1 rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-800">
+                    <.icon name="hero-user" class="w-3.5 h-3.5 text-gray-600" />
+                    <%= tc["name"] %>
+                    <button type="button" phx-click="remove_tag" phx-value-id={tc["id"]} class="hover:text-gray-600">×</button>
+                  </span>
+                </div>
+              <% end %>
+            </div>
+            <button
+              type="submit"
+              class="flex-shrink-0 w-10 h-10 rounded-lg bg-gray-200 text-gray-800 hover:bg-gray-300 flex items-center justify-center disabled:opacity-50"
+              disabled={@sending or not @crm_connected}
+              aria-label="Send"
+            >
+              <.icon name="hero-arrow-up" class="w-5 h-5" />
+            </button>
+          </form>
+
+          <%= if @contact_search_open do %>
+            <div
+              class="absolute left-0 right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto py-1"
+              phx-click-away="close_contact_search"
+            >
+              <div class="px-3 py-2 border-b border-gray-100">
+                <input
+                  type="text"
+                  value={@contact_search_query}
+                  placeholder="Search contacts..."
+                  phx-keyup="contact_search"
+                  phx-debounce="150"
+                  class="w-full text-sm border-0 focus:ring-0"
+                  autofocus
+                />
+              </div>
+              <%= if @contact_search_loading do %>
+                <p class="px-4 py-2 text-sm text-gray-500">Searching...</p>
+              <% else %>
+                <button
+                  :for={c <- @contact_search_results}
+                  type="button"
+                  phx-click="select_contact"
+                  phx-value-id={c["id"]}
+                  phx-value-name={c["name"] || c["id"]}
+                  phx-value-provider={c["provider"]}
+                  class="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm text-gray-800 flex items-center gap-2"
+                >
+                  <.icon name="hero-user" class="w-4 h-4 text-gray-500" />
+                  <%= c["name"] || c["id"] %> <%= if c["email"], do: "(" <> c["email"] <> ")", else: "" %>
+                </button>
+                <%= if Enum.empty?(@contact_search_results) && String.length(@contact_search_query) >= 2 do %>
+                  <p class="px-4 py-2 text-sm text-gray-500">No contacts found.</p>
+                <% end %>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+
+        <div class="mt-2 flex items-center gap-2">
+          <span class="text-gray-500 text-xs">Sources</span>
+          <span class="flex items-center gap-2">
+            <%= if Enum.any?(@tagged_contacts) do %>
+              <%= for provider <- @tagged_contacts |> Enum.map(& &1["provider"]) |> Enum.uniq() |> Enum.reject(&is_nil/1) do %>
+                <%= if path = provider_logo_path(provider) do %>
+                  <img src={path} alt={provider} title={String.capitalize(provider)} class="w-5 h-5 object-contain rounded" />
+                <% end %>
+              <% end %>
+            <% else %>
+              <span class="flex gap-1">
+                <span class="w-2 h-2 rounded-full bg-gray-800"></span>
+                <span class="w-2 h-2 rounded-full bg-orange-500"></span>
+                <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+              </span>
+            <% end %>
+          </span>
+        </div>
+      </div>
+    </div>
+  <% end %>
+</div>
