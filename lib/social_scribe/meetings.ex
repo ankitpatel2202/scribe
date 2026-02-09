@@ -498,6 +498,43 @@ defmodule SocialScribe.Meetings do
     end
   end
 
+  @doc """
+  Builds a single string of recent meeting details (title, date, participants, transcript)
+  for the given user, for use as context in the Ask chat AI. Skips meetings without
+  a transcript. Limited to the most recent `limit` meetings (default 10) to keep
+  prompt size reasonable.
+  """
+  def get_user_meeting_context_for_ask(user, limit \\ 10) do
+    user
+    |> list_user_meetings()
+    |> Enum.take(limit)
+    |> Enum.map(&build_meeting_context_string/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join("\n\n---\n\n")
+  end
+
+  defp build_meeting_context_string(%Meeting{} = meeting) do
+    case transcript_to_string(meeting.meeting_transcript) do
+      {:error, _} ->
+        nil
+
+      {:ok, transcript_string} ->
+        participants_string =
+          case participants_to_string(meeting.meeting_participants || []) do
+            {:ok, s} -> s
+            {:error, _} -> "(no participant data)"
+          end
+
+        generate_prompt(
+          meeting.title,
+          meeting.recorded_at,
+          meeting.duration_seconds,
+          participants_string,
+          transcript_string
+        )
+    end
+  end
+
   defp transcript_to_string(%MeetingTranscript{content: %{"data" => transcript_data}})
        when not is_nil(transcript_data) do
     {:ok, format_transcript_for_prompt(transcript_data)}

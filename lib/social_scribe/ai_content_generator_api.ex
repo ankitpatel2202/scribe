@@ -8,7 +8,7 @@ defmodule SocialScribe.AIContentGeneratorApi do
   @callback generate_hubspot_suggestions(map()) :: {:ok, list(map())} | {:error, any()}
   @callback generate_salesforce_contact_updates(map(), map()) ::
               {:ok, [map()]} | {:error, any()}
-  @callback generate_contact_question_answer(String.t(), [map()]) ::
+  @callback generate_contact_question_answer(String.t(), [map()], opts :: keyword()) ::
               {:ok, String.t()} | {:error, any()}
 
   def generate_follow_up_email(meeting) do
@@ -27,8 +27,8 @@ defmodule SocialScribe.AIContentGeneratorApi do
     impl().generate_salesforce_contact_updates(meeting, contact_record)
   end
 
-  def generate_contact_question_answer(question, contact_data_list) do
-    impl().generate_contact_question_answer(question, contact_data_list)
+  def generate_contact_question_answer(question, contact_data_list, opts \\ []) do
+    impl().generate_contact_question_answer(question, contact_data_list, opts)
   end
 
   defp impl do

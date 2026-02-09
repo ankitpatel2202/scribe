@@ -14,6 +14,7 @@ defmodule SocialScribe.Chat do
   alias SocialScribe.HubspotApi
   alias SocialScribe.SalesforceApi
   alias SocialScribe.AIContentGeneratorApi
+  alias SocialScribe.Meetings
 
   # ---------- Sessions ----------
 
@@ -233,7 +234,10 @@ defmodule SocialScribe.Chat do
       |> List.wrap()
       |> Enum.map(fn tc -> tc["name"] || tc["id"] || "Contact" end)
 
-    case AIContentGeneratorApi.generate_contact_question_answer(question, contact_data_list) do
+    meeting_context = Meetings.get_user_meeting_context_for_ask(user)
+    opts = if meeting_context != "", do: [meeting_context: meeting_context], else: []
+
+    case AIContentGeneratorApi.generate_contact_question_answer(question, contact_data_list, opts) do
       {:ok, answer} ->
         {:ok, %{answer: answer, sources: sources}}
 

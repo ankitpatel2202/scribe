@@ -143,7 +143,7 @@ defmodule SocialScribe.ChatTest do
 
     test "returns answer and sources when AI succeeds", %{user: user} do
       SocialScribe.AIContentGeneratorMock
-      |> expect(:generate_contact_question_answer, fn _q, _data ->
+      |> expect(:generate_contact_question_answer, fn _q, _data, _opts ->
         {:ok, "Generated answer"}
       end)
 
@@ -153,7 +153,7 @@ defmodule SocialScribe.ChatTest do
 
     test "returns error when AI fails", %{user: user} do
       SocialScribe.AIContentGeneratorMock
-      |> expect(:generate_contact_question_answer, fn _q, _data ->
+      |> expect(:generate_contact_question_answer, fn _q, _data, _opts ->
         {:error, :service_unavailable}
       end)
 

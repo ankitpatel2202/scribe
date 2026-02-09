@@ -57,7 +57,7 @@ defmodule SocialScribeWeb.AskLiveTest do
 
     test "send_message with text calls AI and updates messages", %{conn: conn} do
       SocialScribe.AIContentGeneratorMock
-      |> expect(:generate_contact_question_answer, fn _q, _data ->
+      |> expect(:generate_contact_question_answer, fn _q, _data, _opts ->
         {:ok, "Here is the answer."}
       end)
 

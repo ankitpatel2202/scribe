@@ -137,20 +137,34 @@ defmodule SocialScribe.AIContentGenerator do
   end
 
   @impl SocialScribe.AIContentGeneratorApi
-  def generate_contact_question_answer(question, contact_data_list) when is_binary(question) do
+  def generate_contact_question_answer(question, contact_data_list, opts \\ [])
+      when is_binary(question) do
     contact_json =
       contact_data_list
       |> Enum.reject(&is_nil/1)
       |> Jason.encode!(pretty: false)
 
+    meeting_context = Keyword.get(opts, :meeting_context, "")
+
+    meeting_section =
+      if is_binary(meeting_context) and meeting_context != "" do
+        """
+        The user also has the following meeting details (transcripts and info) for context. Use them when relevant to answer the question.
+
+        #{meeting_context}
+        """
+      else
+        ""
+      end
+
     prompt = """
-    You are a helpful assistant that answers questions about CRM contacts.
-    The user asked a question about their contact(s). Use ONLY the following contact data to answer.
-    Be concise and accurate. If the contact data does not contain enough information to answer, say so.
+    You are a helpful assistant that answers questions about CRM contacts and the user's meetings.
+    The user asked a question. Use the contact data and meeting details below when relevant to answer.
+    Be concise and accurate. If the data does not contain enough information to answer, say so.
 
     Contact data (JSON):
     #{contact_json}
-
+    #{meeting_section}
     User question: #{question}
 
     Answer (plain text, no markdown):
