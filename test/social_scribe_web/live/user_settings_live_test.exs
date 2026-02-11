@@ -29,9 +29,6 @@ defmodule SocialScribeWeb.UserSettingsLiveTest do
     end
 
     test "displays connected Google accounts", %{conn: conn, user: user} do
-      # Create a Google credential for the user
-      # Assuming UserCredential has an :email field for display purposes.
-      # If not, you might display the UID or another identifier.
       credential_attrs = %{
         user_id: user.id,
         provider: "google",
@@ -47,6 +44,42 @@ defmodule SocialScribeWeb.UserSettingsLiveTest do
       assert has_element?(view, "li", "UID: google-uid-123")
       assert has_element?(view, "li", "(linked_account@example.com)")
       refute has_element?(view, "p", "You haven't connected any Google accounts yet.")
+    end
+
+    test "renders Bot Preferences, HubSpot and LinkedIn sections", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/dashboard/settings")
+      assert html =~ "Bot Preferences"
+      assert html =~ "Connected HubSpot Accounts"
+      assert html =~ "Connected LinkedIn Account"
+    end
+
+    test "update_user_bot_preference saves and shows flash", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/dashboard/settings")
+
+      view
+      |> form("form[phx-submit=\"update_user_bot_preference\"]", %{
+        "user_bot_preference" => %{"join_minute_offset" => "3"}
+      })
+      |> render_submit()
+
+      assert render(view) =~ "Bot preference updated successfully"
+    end
+
+    test "validate_user_bot_preference updates form on change", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/dashboard/settings")
+
+      view
+      |> form("form[phx-change=\"validate_user_bot_preference\"]", %{
+        "user_bot_preference" => %{"join_minute_offset" => "5"}
+      })
+      |> render_change()
+
+      assert has_element?(view, "form[phx-submit=\"update_user_bot_preference\"]")
+    end
+
+    test "facebook_pages live action shows modal", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/dashboard/settings/facebook_pages")
+      assert has_element?(view, "h2", "Select a Facebook Page")
     end
   end
 end

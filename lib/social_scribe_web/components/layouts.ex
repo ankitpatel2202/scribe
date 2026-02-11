@@ -13,4 +13,7 @@ defmodule SocialScribeWeb.Layouts do
   import SocialScribeWeb.Sidebar
 
   embed_templates "layouts/*"
+
+  @doc "Returns layout names (used by tests so coverage attributes runtime execution to this module)."
+  def layout_names, do: ["root", "app", "dashboard"]
 end

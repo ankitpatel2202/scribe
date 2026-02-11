@@ -192,6 +192,10 @@
                 <button
                   :for={c <- @contact_search_results}
                   type="button"
+                  phx-click="select_contact"
+                  phx-value-id={c["id"]}
+                  phx-value-name={c["name"] || c["id"]}
+                  phx-value-provider={c["provider"]}
                   data-contact-id={c["id"]}
                   data-contact-name={c["name"] || c["id"]}
                   data-contact-provider={c["provider"]}

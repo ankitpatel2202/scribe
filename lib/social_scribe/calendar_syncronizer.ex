@@ -19,13 +19,28 @@ defmodule SocialScribe.CalendarSyncronizer do
   #TODO: Add support for syncing only since the last sync time and record sync attempts
   """
   def sync_events_for_user(user) do
-    user
-    |> Accounts.list_user_credentials(provider: "google")
+    credentials =
+      user
+      |> Accounts.list_user_credentials(provider: "google")
+      |> Enum.split_with(&has_refresh_token?/1)
+
+    {with_refresh_token, without_refresh_token} = credentials
+
+    if without_refresh_token != [] do
+      Logger.info(
+        "Calendar sync skipped for #{length(without_refresh_token)} Google account(s) (no refresh token). " <>
+          "Re-connect in Settings to restore calendar sync. Credential IDs: #{inspect(Enum.map(without_refresh_token, & &1.id))}"
+      )
+    end
+
+    with_refresh_token
     |> Task.async_stream(&fetch_and_sync_for_credential/1, ordered: false, on_timeout: :kill_task)
     |> Stream.run()
 
     {:ok, :sync_complete}
   end
+
+  defp has_refresh_token?(%UserCredential{refresh_token: rt}), do: not blank?(rt)
 
   defp fetch_and_sync_for_credential(%UserCredential{} = credential) do
     with {:ok, token} <- ensure_valid_token(credential),
@@ -39,10 +54,9 @@ defmodule SocialScribe.CalendarSyncronizer do
          :ok <- sync_items(items, credential.user_id, credential.id) do
       :ok
     else
-      {:error, {:refresh_failed, {_status, %{"error_description" => desc}}}} = reason
-      when is_binary(desc) ->
+      {:error, {:refresh_failed, {_status, %{"error_description" => _desc}}}} = reason ->
         Logger.warning(
-          "Calendar sync skipped for credential #{credential.id} (user_id: #{credential.user_id}): no refresh token. " <>
+          "Calendar sync skipped for credential #{credential.id} (user_id: #{credential.user_id}): token refresh failed. " <>
             "User should re-connect their Google account in Settings to restore calendar sync."
         )
         reason

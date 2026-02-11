@@ -63,14 +63,39 @@ defmodule SocialScribeWeb.HomeLive do
 
   @impl true
   def handle_info(:sync_calendars, socket) do
-    CalendarSyncronizer.sync_events_for_user(socket.assigns.current_user)
+    parent = self()
+    user = socket.assigns.current_user
 
-    events = Calendar.list_upcoming_events(socket.assigns.current_user)
+    Task.start(fn ->
+      try do
+        CalendarSyncronizer.sync_events_for_user(user)
+        events = Calendar.list_upcoming_events(user)
+        send(parent, {:sync_calendars_done, {:ok, events}})
+      catch
+        kind, reason ->
+          Logger.error("Calendar sync failed: #{inspect(kind)} #{inspect(reason)}")
+          send(parent, {:sync_calendars_done, {:error, reason}})
+      end
+    end)
 
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({:sync_calendars_done, result}, socket) do
     socket =
-      socket
-      |> assign(:events, events)
-      |> assign(:loading, false)
+      case result do
+        {:ok, events} ->
+          socket
+          |> assign(:events, events)
+          |> assign(:loading, false)
+
+        {:error, _reason} ->
+          socket
+          |> assign(:events, Calendar.list_upcoming_events(socket.assigns.current_user))
+          |> assign(:loading, false)
+          |> put_flash(:error, "Calendar sync failed. Your existing events are shown.")
+      end
 
     {:noreply, socket}
   end

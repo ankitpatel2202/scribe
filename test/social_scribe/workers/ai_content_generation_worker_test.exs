@@ -19,6 +19,8 @@ defmodule SocialScribe.Workers.AIContentGenerationWorkerTest do
   @generated_email_draft "This is a generated follow-up email draft."
 
   describe "perform/1" do
+    @describetag :capture_log
+
     setup do
       stub_with(AIGeneratorMock, SocialScribe.AIContentGenerator)
       :ok

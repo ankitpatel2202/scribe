@@ -11,7 +11,7 @@ defmodule SocialScribe.Chat do
   alias SocialScribe.Accounts.User
   alias SocialScribe.Chat.Session
   alias SocialScribe.Chat.Message
-  alias SocialScribe.HubspotApi
+  alias SocialScribe.HubspotApiBehaviour, as: HubspotApi
   alias SocialScribe.SalesforceApi
   alias SocialScribe.AIContentGeneratorApi
   alias SocialScribe.Meetings

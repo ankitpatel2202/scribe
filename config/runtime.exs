@@ -114,8 +114,13 @@ if config_env() == :prod do
   host = System.get_env("PHX_HOST") || "example.com"
   port = String.to_integer(System.get_env("PORT") || "4000")
 
+  # Allow WebSocket connections from the app host (required for LiveView; otherwise client falls back to longpoll).
+  # PHX_HOST must match your app URL (e.g. in fly.toml: PHX_HOST = "your-app.fly.dev").
+  check_origin = ["https://#{host}", "http://#{host}"]
+
   config :social_scribe, SocialScribeWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
+    check_origin: check_origin,
     http: [
       # Enable IPv6 and bind on all interfaces.
       # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.

@@ -24,8 +24,9 @@ import topbar from "../vendor/topbar"
 import Hooks from "./hooks"
 
 let csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
+// Try WebSocket longer before falling back to longpoll (helps on cold start / slow networks, e.g. Fly.io).
 let liveSocket = new LiveSocket("/live", Socket, {
-  longPollFallbackMs: 2500,
+  longPollFallbackMs: 10000,
   params: {_csrf_token: csrfToken},
   hooks: Hooks
 })
